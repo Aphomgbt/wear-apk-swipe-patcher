@@ -1,15 +1,14 @@
 # wear-apk-swipe-patcher
 
-> ### ⚠️ AI 生成声明
->
-> **本项目的全部代码、脚本与文档均由 AI 编写，没有一行是人工逐字敲出来的。**
-> 详细的参与方式与边界见文末「[作者与 AI 声明](#作者与-ai-声明)」。
->
-> 使用前请自行阅读「[已知局限](#已知局限)」——尤其是**重新签名会改变应用签名**、
-> 以及**真机验证尚未完成**这两点。
+> **AI 生成声明：本项目的全部代码、脚本与文档均由 AI 编写。**
 
 把任意 APK 的「右滑返回」关掉，并在**手机上**重新签名输出一个可直接安装的 APK。
 全程没有 PC 参与：不需要 aapt2 / zipalign / apksigner / apktool 等外部可执行文件。
+
+## 下载
+
+不想自己编译的话，直接到 [Releases](https://github.com/Aphomgbt/wear-apk-swipe-patcher/releases/latest)
+下载 APK 装到 Android 手机上即可（minSdk 26，零 AndroidX 依赖，APK 约 3.5 MB）。
 
 ## 它到底做了什么
 
@@ -91,6 +90,10 @@ java -cp "$CP" dev.PatcherCli verify  out.apk --scheme v2 --min-sdk 24
 ### 输出签名方案（`--scheme` / 界面单选框）
 
 **在打补丁之前**就要定下来：输出 APK 写不写 V2 签名。
+
+> **这个开关主要是为了华为儿童手表加的。** 这类设备对输出 APK 的签名方案比较挑，
+> 默认的 `v1+v2` 打出来可能装不上；换成只签一种重新打包即可。
+> 默认值仍是 `v1+v2`，对其它设备没有任何影响。
 
 | 方案 | 写入 | 不写入 | 适用 |
 |---|---|---|---|
@@ -228,9 +231,7 @@ build-apk.sh  构建 App APK（aapt2 + d8 + core 签名，不依赖 Gradle）
 
 ### App 本身的验证
 
-`build-apk.sh` 产出 `build/wear-apk-swipe-patcher.apk`（3,471,033 B，
-sha256 `7fafe7c7638ad61b5962fe651b32f9333cc2c9639a08042172075072a0b8f008`），
-用 Android SDK 官方工具核对：
+`build-apk.sh` 产出 `build/wear-apk-swipe-patcher.apk`（3,471,033 B），用 Android SDK 官方工具核对：
 
 | 检查 | 工具 | 结果 |
 |---|---|---|
@@ -241,6 +242,11 @@ sha256 `7fafe7c7638ad61b5962fe651b32f9333cc2c9639a08042172075072a0b8f008`），
 | **框架资源** | `unzip -l` | **14 个 `frameworks/android/android-23..36.apk` + `arsclib.properties` 都在** |
 | 依赖安全 | 高危包扫描 | `java/nio/file`、`java/awt`、`javax/swing`、`javax/imageio`、`sun/`、`com/sun/` 全部 **0 引用** |
 | Gradle 路径 | `gradle --no-daemon assembleDebug` | `BUILD SUCCESSFUL in 5m 49s`，产出 APK 同样通过 apksigner 校验 |
+
+> **关于 APK 的 sha256**：`build-apk.sh` 每次构建都会**新生成一张自签名证书**，
+> 所以同一个源码每次构建出来的 sha256 都不一样（体积则保持一致，都是 3,471,033 B）。
+> 要校验下载到的成品，请以 [Releases](https://github.com/Aphomgbt/wear-apk-swipe-patcher/releases)
+> 页面公布的 sha256 为准 —— 那个是固定的。
 
 **踩到的坑**（已修）：`PackageApk` 一开始只把 `.class` 转成 dex 打进 APK，漏掉了 jar 里的运行时资源。
 ARSCLib 是用 `AndroidFrameworks.class.getResourceAsStream("/frameworks/android/android-XX.apk")`
@@ -263,7 +269,8 @@ manifest placeholder 机制，**`aapt2` 不会替换它**。于是手工构建�
 - **只覆盖 system/activity 级别的右滑返回**。Compose 的 `SwipeDismissBox`、
   View 里 `ViewDragHelper`、游戏自绘手势**不在覆盖范围内** —— 那些是应用自己画的，
   资源层改不动。
-- Wear OS 各版本对 `windowSwipeToDismiss` 的行为不完全一致，**需要真机验证**。
+- Wear OS 各版本对 `windowSwipeToDismiss` 的行为不完全一致；**Wear OS 2 已实测可用**，
+  Wear OS 3/4 仍需按系统版本分别确认。
 - 重新签名后应用签名变了，**必须先卸载原版再安装**（除非原本就是同一密钥）。
   依赖原签名的功能（Google 登录、Firebase 校验、应用内购）可能失效。
 - 二次打包会丢失原始 zip 条目的时间戳（apksig 归一到固定时间），对运行无影响。
@@ -271,57 +278,20 @@ manifest placeholder 机制，**`aapt2` 不会替换它**。于是手工构建�
 - 选了「仅 V2」签名后产物没有 V1 签名，**装不到 Android 7.0 以下**（补丁报告里会有对应警告）。
   这也是为什么默认是 V1 + V2。
 
-## 未完成
+## 未完成 / 验证情况
 
-- **真机测试** —— 这是唯一还没做的关键验证：
-  - App 装到手机上跑通一次完整流程
-  - 打出来的成品装到手表上，确认右滑返回真的被关掉
-- Wear OS 3/4 对 `windowSwipeToDismiss` 的支持不一致，需要按手表系统版本分别确认
+| 环节 | 状态 |
+|---|---|
+| core 逻辑 + 64 项自检（真实 39 MB APK 作输入） | ✅ 全部通过 |
+| 三种签名方案端到端（V1+V2 / 仅 V2 / 仅 V1） | ✅ 全部通过 |
+| 命令行路径（`inspect` / `patch` / `verify`） | ✅ 实测通过 |
+| App 构建产物（签名 / 对齐 / 清单 / dex / 框架资源） | ✅ 用 Android SDK 官方工具核对 |
+| **成品装到真实手表** | ✅ **Wear OS 2 手表实测可用，右滑返回已被关闭** |
+| App 装到手机上跑一遍完整 UI 流程 | ⏳ 未在真机上跑过 |
+| Wear OS 3 / 4 | ⏳ 未验证 |
 
-## 作者与 AI 声明
-
-### 结论：本项目由 AI 编写
-
-**仓库里的全部内容——Java 源码、Shell 构建脚本、Gradle 配置、项目文档——都是 AI 生成的。**
-没有一行是人工逐字敲出来的。
-
-| 角色 | 承担者 | 具体做了什么 |
-|---|---|---|
-| 编写者 | **AI 编程代理（Cline）** | 全部源码、脚本、构建流程、测试、本文档，以及实际执行的编译/测试/排查 |
-| 需求方与验收方 | 人类用户 | 提出目标与约束、决定设计取舍、审阅每一处改动、纠正 AI 的错误方向 |
-
-人类的作用是**方向、约束与验收**，不是输入代码。因此：
-
-- 项目里出现的注释、命名风格、设计理由说明，都是 AI 自己写的；
-- 「已验证的结论」一节里的数字，是 AI 实际跑命令量出来的，复现命令都在文档里；
-- 但**架构决定**（例如「零 AndroidX」「core 不走 Gradle 子项目」「minSdk 定 26」）
-  是在人类用户明确认可后定下来的，不是 AI 自作主张。
-
-### 这对使用者意味着什么
-
-AI 生成的代码**可以正常编译、测试通过并在真实产物上验证**，但请把下面几点当作前提：
-
-- **没有经过大规模人工代码审计。** 安全边界（签名密钥处理、`ContentProvider` 的路径限制、
-  文件写入范围）虽然写了注释说明设计意图，但**请自行复核**再用于不可信的输入。
-- **真机验证仍未完成**（见「未完成」）。所有结论都来自本机的命令行工具与真实 APK 产物，
-  没有一台真实 Wear 设备跑过完整流程。
-- **不要用它处理来路不明或你无权修改的 APK。**
-- 发现 AI 写错的地方很正常——请开 issue 指出，不必客气。
-
-### 一个具体的例子
-
-本次「签名方案可选」功能的开发过程能说明 AI 的**真实工作方式**，包括它犯的错：
-
-1. AI 把「是否做 V2 签名」实现成三选一（`V1+V2` / `仅 V2` / `仅 V1`）而非二选一复选框，
-   并在 README 里主动说明了这个偏离及理由；
-2. AI 第一次编译时漏了一处 API（`isVerifiedUsingV2Scheme` 写错），**自检直接报错**，
-   它自己读编译输出修正后重跑；
-3. AI 踩到一个非显然的坑并自行定位：**只签 V2 的产物如果仍按 `minSdk = 21` 校验，
-   apksig 会因为「缺少 V1 签名」把合法产物判为失败**，于是让校验起点跟着方案走
-   （`max(minSdk, 24)`）；
-4. 除了信任 apksig 的结论，AI 还加了一个**独立见证**——直接数输出里
-   `META-INF/*.SF|*.RSA|*.DSA|*.EC` 的条目数，用来证明「该写 V1 就真写了、该跳过就真没写」；
-5. 以上每一步都在提交历史与本文档里可查。
+仍未验证的部分：手机端 App 的完整 UI 流程没有真机跑过（不过它和命令行走的是同一份 core，
+风险较低）；Wear OS 3/4 对 `windowSwipeToDismiss` 的支持不一致，需要按系统版本分别确认。
 
 ## 许可证
 
