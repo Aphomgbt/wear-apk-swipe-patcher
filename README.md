@@ -290,10 +290,10 @@ build-apk.sh  构建 App APK（aapt2 + d8 + core 签名，不依赖 Gradle）
 > 的 sha256（也就是「签名密钥持久化」这一版），Release 页面同时公布了它：
 >
 > ```text
-> 9a73839f867112a26823e431a987ad602bf339b505c3c171221f43790aba9d89  wear-apk-swipe-patcher-v1.0.apk
+> 9a73839f867112a26823e431a987ad602bf339b505c3c171221f43790aba9d89  wear-apk-swipe-patcher-1.0.apk
 > ```
 >
-> 校验方法：`sha256sum wear-apk-swipe-patcher-v1.0.apk`。下载到的包只要 sha256 对得上，
+> 校验方法：`sha256sum wear-apk-swipe-patcher-1.0.apk`。下载到的包只要 sha256 对得上，
 > 就说明和我本地构建、并且通过上表所有检查的是同一份文件。
 
 **踩到的坑**（已修）：`PackageApk` 一开始只把 `.class` 转成 dex 打进 APK，漏掉了 jar 里的运行时资源。
