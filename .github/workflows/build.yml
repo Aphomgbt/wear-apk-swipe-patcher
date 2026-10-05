@@ -1,0 +1,56 @@
+name: build
+
+# 只跑「纯 JVM」那部分：编译 core + 调试工具。
+#
+# 为什么不在这里跑 ./build.sh test？
+#   完整自检需要一个**真实的第三方 APK**（39 MB 的 Unity 游戏）作为输入，
+#   那个 APK 有版权、体积也大，不适合提交进仓库。
+#   想跑完整自检，请在本机执行：./build.sh test <你的.apk>
+#
+# 这个 workflow 的价值：证明「clone 下来、装个 JDK 17，就能直接编译通过」，
+# 并且证明仓库里随附的两个第三方 jar 没有被改动过。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  compile:
+    name: 编译 core + tools (JDK 17)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 校验随仓库提供的第三方 jar 未被篡改
+        run: |
+          set -euo pipefail
+          echo "2000fab9f436a199db2bca9ceae9fd8225f23fa2e1ffc9ee2c0b508169731a82  libs/ARSCLib-1.4.0.jar" | sha256sum -c -
+          echo "c070ed1394629d74641aa0906f60b2ffa1ee77e6366a1f93437f59717b1aeb89  libs/apksig-8.7.0.jar" | sha256sum -c -
+
+      - name: 编译（不联网、不用 Gradle、不用 Android SDK）
+        run: ./build.sh
+
+      - name: 确认产物存在
+        run: |
+          set -euo pipefail
+          test -f build/core.jar
+          test -d build/tools
+          echo "core.jar 大小: $(stat -c%s build/core.jar) B"
+          echo "编译出的 class 数量: $(find build/classes -name '*.class' | wc -l)"
+
+      - name: 命令行工具能正常启动（usage 能打印出来）
+        run: |
+          set -euo pipefail
+          CP="libs/ARSCLib-1.4.0.jar:libs/apksig-8.7.0.jar:build/classes:build/tools"
+          # 不给参数时应打印用法并返回非 0，这里只要求它不抛异常堆栈
+          java -cp "$CP" dev.PatcherCli 2>&1 | tee /tmp/usage.txt || true
+          grep -q "用法\|usage" /tmp/usage.txt

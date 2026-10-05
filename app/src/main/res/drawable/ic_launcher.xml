@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自绘应用图标：白底圆角方块 + 白色“返回”箭角 + 红色斜杠（表示“禁用右滑返回”）。
+  纯 vector，不需要 PNG，任何密度都能解析。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 背景 -->
+    <path
+        android:fillColor="#3F51B5"
+        android:pathData="M18,10 L90,10 A8,8 0 0 1 98,18 L98,90 A8,8 0 0 1 90,98 L18,98 A8,8 0 0 1 10,90 L10,18 A8,8 0 0 1 18,10 Z" />
+
+    <!-- 返回箭角 -->
+    <path
+        android:pathData="M64,32 L44,54 L64,76"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 斜杠：禁用 -->
+    <path
+        android:pathData="M32,78 L78,30"
+        android:strokeColor="#FF5252"
+        android:strokeWidth="9"
+        android:strokeLineCap="round" />
+</vector>

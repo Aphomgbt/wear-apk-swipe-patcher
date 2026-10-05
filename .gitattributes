@@ -1,0 +1,23 @@
+# 统一按 LF 存储，检出时也保持 LF（项目里全是 .sh / .java / .xml，Linux 为主）
+* text=auto eol=lf
+
+# 明确二进制，避免 git 试图做行尾转换而损坏文件
+*.jar   binary
+*.apk   binary
+*.aab   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.keystore binary
+*.jks   binary
+
+# GitHub 语言统计：把 jar 排除出「语言」识别
+libs/*.jar linguist-vendored
+gradle/wrapper/gradle-wrapper.jar binary linguist-vendored
+
+# 让 git diff / blame 更准确：这些是自动生成的
+gradlew     linguist-generated
+gradlew.bat linguist-generated

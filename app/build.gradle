@@ -1,0 +1,64 @@
+/*
+ * app 模块。
+ *
+ * 设计取舍：
+ *  - 不依赖 AndroidX / Jetpack / Compose，只用 framework API（Theme.Material + 原生 View），
+ *    所以 dependencies 里一条都没有，构建不受第三方仓库可用性影响，APK 也小。
+ *  - core 是纯 JVM 代码，通过 sourceSets 直接编进来，见下面的 java.srcDirs。
+ */
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.wearswipe.app'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'com.wearswipe.app'
+        // minSdk 26 不是随便定的：ARSCLib 与 apksig 引用了 java.util.function /
+        // java.util.stream（API 24）、java.time / java.lang.invoke.MethodHandles（API 26），
+        // 不做 core library desugaring 的话，低于 26 会在运行时 NoClassDefFoundError。
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += ['../core/src/main/java']
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            // 需要自己的密钥时在这里加 signingConfig
+        }
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/*.kotlin_module']
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    // apksig 只发布在 Google Maven 上（不是 Maven Central）。
+    implementation files('../libs/ARSCLib-1.4.0.jar', '../libs/apksig-8.7.0.jar')
+}

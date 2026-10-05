@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">禁用右滑返回</string>
+
+    <string name="pick_apk">1. 选择要处理的 APK</string>
+    <string name="picked_none">尚未选择文件</string>
+    <string name="analyzing">正在分析…</string>
+
+    <string name="section_options">2. 选项</string>
+    <string name="opt_application">同时给 &lt;application&gt; 打补丁（覆盖所有页面）</string>
+    <string name="opt_all_activities">给清单里所有 Activity 打补丁</string>
+    <string name="opt_parent_hint">父主题（留空自动探测，如 UnityThemeSelector）</string>
+
+    <string name="opt_signing_title">输出签名方案（打补丁前选择）</string>
+    <string name="opt_scheme_v1v2">V1 + V2（推荐，兼容性最好）</string>
+    <string name="opt_scheme_v2">仅 V2（不写 META-INF，需 Android 7.0 以上）</string>
+    <string name="opt_scheme_v1">仅 V1（不写 v2 签名块）</string>
+
+    <string name="start">3. 开始打补丁</string>
+    <string name="cancel">取消</string>
+    <string name="section_log">运行日志</string>
+
+    <string name="section_result">4. 结果</string>
+    <string name="save_apk">保存 / 分享 APK</string>
+    <string name="install_here">安装到本机</string>
+    <string name="restart">再处理一个</string>
+
+    <string name="notif_channel_name">打补丁进度</string>
+    <string name="notif_title">正在给 APK 打补丁</string>
+
+    <string name="err_no_file">请先选择一个 APK</string>
+    <string name="err_not_patchable">这个 APK 无法处理：%1$s</string>
+
+    <string name="warn_repack">已成品的 APK 与原始版本签名不同。装到手表前需要先卸载原版；依赖原签名的功能（Google 登录 / Firebase 校验 / 应用内购）可能失效。</string>
+
+    <string name="saved_to">已保存到：%1$s</string>
+    <string name="save_failed">保存失败：%1$s</string>
+</resources>

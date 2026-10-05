@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="12dp"
+            android:text="关闭 APK 的右滑返回，并重新签名输出一个新 APK。全程在本机完成，不联网。"
+            android:textSize="13sp" />
+
+        <TextView style="@style/SectionTitle" android:text="@string/pick_apk" />
+
+        <Button
+            android:id="@+id/btn_pick"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/pick_apk" />
+
+        <TextView
+            android:id="@+id/txt_input"
+            style="@style/Mono"
+            android:paddingTop="8dp"
+            android:text="@string/picked_none" />
+
+        <TextView
+            android:id="@+id/txt_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:text="@string/warn_repack"
+            android:textColor="@color/error_text"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <TextView style="@style/SectionTitle" android:text="@string/section_options" />
+
+        <CheckBox
+            android:id="@+id/chk_application"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/opt_application" />
+
+        <CheckBox
+            android:id="@+id/chk_all_activities"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/opt_all_activities" />
+
+        <EditText
+            android:id="@+id/edt_parent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/opt_parent_hint"
+            android:inputType="text"
+            android:maxLines="1" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="12dp"
+            android:text="@string/opt_signing_title"
+            android:textSize="13sp" />
+
+        <RadioGroup
+            android:id="@+id/rad_signing"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rad_scheme_v1v2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/opt_scheme_v1v2" />
+
+            <RadioButton
+                android:id="@+id/rad_scheme_v2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/opt_scheme_v2" />
+
+            <RadioButton
+                android:id="@+id/rad_scheme_v1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/opt_scheme_v1" />
+
+        </RadioGroup>
+
+        <Button
+            android:id="@+id/btn_start"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:enabled="false"
+            android:text="@string/start" />
+
+        <ProgressBar
+            android:id="@+id/progress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:max="100"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_log_title"
+            style="@style/SectionTitle"
+            android:text="@string/section_log"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_log"
+            style="@style/Mono"
+            android:background="@color/log_background"
+            android:padding="8dp"
+            android:textColor="@color/log_text"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_result_title"
+            style="@style/SectionTitle"
+            android:text="@string/section_result"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_result"
+            style="@style/Mono"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/save_apk"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_install"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/install_here"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_restart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/restart"
+            android:visibility="gone" />
+
+    </LinearLayout>
+</ScrollView>

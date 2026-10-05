@@ -1,0 +1,49 @@
+# ---- 构建产物 ----
+build/
+.gradle/
+app/build/
+out/
+captures/
+release/
+
+# ---- 本机私有配置（含绝对路径，绝不能提交）----
+local.properties
+
+# ---- IDE ----
+*.iml
+.idea/
+.vscode/
+.externalNativeBuild/
+.cxx/
+
+# ---- 操作系统 / 编辑器杂项 ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+
+# ---- 签名密钥（千万不要提交）----
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.bks
+*.pem
+*.key
+
+# ---- 测试产物：本工具专门用来改 APK，别把测试用的 APK 误传上来 ----
+*.apk
+*.aab
+*.apks
+*.idsig
+*.dex
+
+# ---- 日志与临时文件 ----
+*.log
+*.tmp
+/tmp/
+.npm/

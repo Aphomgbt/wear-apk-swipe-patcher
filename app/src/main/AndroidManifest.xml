@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  注意：这里刻意不写 package 属性。
+  Gradle/AGP 8+ 要求包名写在 build.gradle 的 namespace 里，清单里再写 package 会直接报错；
+  而 build-apk.sh 用 aapt2 link 的 rename-manifest-package 参数补上包名。
+  这样同一份清单两条构建路径都能用。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 长时间打包/签名需要前台服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 可选：直接从本机安装打好的 APK -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:largeHeap="true"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".PatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- 只用于把打好的 APK 交给系统安装器/分享面板，不对外开放 -->
+        <provider
+            android:name=".ApkShareProvider"
+            android:authorities="${applicationId}.apks"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+
+</manifest>

@@ -1,0 +1,12 @@
+/*
+ * 根工程。
+ *
+ * 注意：core 是纯 JVM 模块（不依赖 Android），这里刻意**不**做成 Gradle 子项目，
+ * 而是由 app 直接把 core/src 加进 sourceSets —— 这样：
+ *   - 用 Gradle 构建时，core 源码会被一起编译；
+ *   - 不用 Gradle 时，根目录的 build.sh 也能独立编译出 core.jar 给 build-apk.sh 用。
+ * 同一份源码，两条路径，不会出现两份实现不同步的问题。
+ */
+plugins {
+    id 'com.android.application' version '9.4.1' apply false
+}

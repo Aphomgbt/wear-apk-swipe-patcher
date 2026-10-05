@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="accent">#FF3F51B5</color>
+    <color name="accent_dark">#FF303F9F</color>
+    <color name="log_background">#FFF5F5F5</color>
+    <color name="log_text">#FF212121</color>
+    <color name="ok_text">#FF1B5E20</color>
+    <color name="error_text">#FFB71C1C</color>
+</resources>
