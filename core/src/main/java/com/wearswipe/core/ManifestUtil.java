@@ -144,6 +144,17 @@ public final class ManifestUtil {
         }
     }
 
+    /** {@code 0x7f030005} -> {@code "WearNoSwipeUnityTheme"}；不是样式则返回 {@code null}。 */
+    public static String styleNameOf(TableBlock table, int resourceId) {
+        String description = describeResource(table, resourceId);
+        final String prefix = "style/";
+        if (description == null || !description.startsWith(prefix)) {
+            return null;
+        }
+        String name = description.substring(prefix.length());
+        return name.isEmpty() ? null : name;
+    }
+
     static void requireManifest(AndroidManifestBlock manifest) throws IOException {
         if (manifest == null) {
             throw new IOException("该 APK 没有 AndroidManifest.xml");

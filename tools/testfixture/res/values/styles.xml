@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自检夹具的资源。关键点：这里<b>故意</b>定义了一个和本工具默认补丁样式同名的
+  style/WearNoSwipeUnityTheme，而且它自己带有别的配置。
+  打补丁时工具必须认出"这不是我生成的"，改用别的名字，不能把这几个 item 清掉。
+-->
+<resources>
+
+    <style name="AppTheme" parent="@android:style/Theme" />
+
+    <style name="OtherTheme" parent="@android:style/Theme.NoTitleBar" />
+
+    <style name="WearNoSwipeUnityTheme" parent="@android:style/Theme.Light">
+        <item name="android:textColor">#ffff0000</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+</resources>

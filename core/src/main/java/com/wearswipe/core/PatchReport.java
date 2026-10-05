@@ -27,6 +27,9 @@ public final class PatchReport {
     private final List<String> patchedTargets = new ArrayList<String>();
     private final List<String> warnings = new ArrayList<String>();
 
+    private String signerFingerprint;
+    private boolean signerFingerprintFromStoredKey;
+
     public String getPackageName() {
         return packageName;
     }
@@ -132,6 +135,28 @@ public final class PatchReport {
         return appliedCount > 0;
     }
 
+    /**
+     * 这次输出用的签名证书 SHA-256 指纹（大写、冒号分隔）。
+     *
+     * <p>同一把密钥出的包指纹相同，可直接覆盖安装。
+     */
+    public String getSignerFingerprint() {
+        return signerFingerprint;
+    }
+
+    void setSignerFingerprint(String signerFingerprint) {
+        this.signerFingerprint = signerFingerprint;
+    }
+
+    /** 指纹是否来自保存下来的固定密钥（{@code false} 表示这次是临时现生成的密钥）。 */
+    public boolean isSignerFingerprintFromStoredKey() {
+        return signerFingerprintFromStoredKey;
+    }
+
+    void setSignerFingerprintFromStoredKey(boolean fromStoredKey) {
+        this.signerFingerprintFromStoredKey = fromStoredKey;
+    }
+
     static String hex(int value) {
         return "0x" + Integer.toHexString(value);
     }
@@ -149,6 +174,11 @@ public final class PatchReport {
           .append(" id=").append(hex(baseThemeResourceId)).append('\n');
         sb.append("补丁主题        : ").append(patchStyleName)
           .append(" id=").append(hex(patchStyleResourceId)).append('\n');
+        if (signerFingerprint != null) {
+            sb.append("签名指纹        : ").append(signerFingerprint)
+              .append(signerFingerprintFromStoredKey ? "（复用已保存的密钥）" : "（临时生成的密钥）")
+              .append('\n');
+        }
         sb.append("已应用位置      : ").append(appliedCount).append(" 处\n");
         for (String t : patchedTargets) {
             sb.append("  - ").append(t).append('\n');

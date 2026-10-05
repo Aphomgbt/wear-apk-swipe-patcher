@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自检夹具：给 dev.CoreSelfTest 用的最小 APK 清单。
+
+  故意包含四种情况，用来验证「每个 Activity 各自继承原主题」与「不覆盖同名原样式」：
+    MainActivity   有自己的主题 @style/AppTheme（= 启动 Activity）
+    SecondActivity 有自己的主题 @style/OtherTheme（与启动 Activity 不同）
+    ThirdActivity  没有自己的主题 -> 真正生效的是 <application> 的 @style/AppTheme
+    FourthActivity 用的是框架主题 @android:style/Theme.DeviceDefault
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.wearswipe.testfixture"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="34" />
+
+    <application
+        android:label="WearSwipe Test Fixture"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:theme="@style/AppTheme">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SecondActivity"
+            android:theme="@style/OtherTheme" />
+
+        <activity android:name=".ThirdActivity" />
+
+        <activity
+            android:name=".FourthActivity"
+            android:theme="@android:style/Theme.DeviceDefault" />
+    </application>
+</manifest>

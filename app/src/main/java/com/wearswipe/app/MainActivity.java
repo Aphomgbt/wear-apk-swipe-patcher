@@ -12,6 +12,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -25,6 +26,7 @@ import com.wearswipe.core.ApkInspector;
 import com.wearswipe.core.PatchOptions;
 import com.wearswipe.core.PatchReport;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -42,6 +44,11 @@ public final class MainActivity extends Activity implements PatchSession.Listene
     private static final int REQ_PICK_APK = 1001;
     private static final int REQ_SAVE_APK = 1002;
     private static final int REQ_NOTIFICATION = 1003;
+    private static final int REQ_SAVE_KEY = 1004;
+    private static final int REQ_PICK_KEY = 1005;
+
+    /** 导入的密钥文件最大 8 MB（正常只有几 KB，防止选错大文件）。 */
+    private static final int MAX_KEY_FILE_BYTES = 8 * 1024 * 1024;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -50,6 +57,8 @@ public final class MainActivity extends Activity implements PatchSession.Listene
     private Button btnSave;
     private Button btnInstall;
     private Button btnRestart;
+    private Button btnKeyExport;
+    private Button btnKeyImport;
     private CheckBox chkApplication;
     private CheckBox chkAllActivities;
     private EditText edtParent;
@@ -62,9 +71,12 @@ public final class MainActivity extends Activity implements PatchSession.Listene
     private TextView txtLog;
     private TextView txtResultTitle;
     private TextView txtResult;
+    private TextView txtKey;
 
     /** 用户点了"保存到…"后等待落盘的数据源。 */
     private File pendingSaveSource;
+    /** 用户点了"导出签名密钥"后等落盘的加密备份内容。 */
+    private byte[] pendingKeyPayload;
     /** URI 授权是否已持久化，避免重复请求。 */
     private Uri lastPickedUri;
 
@@ -78,6 +90,8 @@ public final class MainActivity extends Activity implements PatchSession.Listene
         btnSave = (Button) findViewById(R.id.btn_save);
         btnInstall = (Button) findViewById(R.id.btn_install);
         btnRestart = (Button) findViewById(R.id.btn_restart);
+        btnKeyExport = (Button) findViewById(R.id.btn_key_export);
+        btnKeyImport = (Button) findViewById(R.id.btn_key_import);
         chkApplication = (CheckBox) findViewById(R.id.chk_application);
         chkAllActivities = (CheckBox) findViewById(R.id.chk_all_activities);
         edtParent = (EditText) findViewById(R.id.edt_parent);
@@ -90,6 +104,7 @@ public final class MainActivity extends Activity implements PatchSession.Listene
         txtLog = (TextView) findViewById(R.id.txt_log);
         txtResultTitle = (TextView) findViewById(R.id.txt_result_title);
         txtResult = (TextView) findViewById(R.id.txt_result);
+        txtKey = (TextView) findViewById(R.id.txt_key);
 
         btnPick.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -122,8 +137,21 @@ public final class MainActivity extends Activity implements PatchSession.Listene
                 refreshUi();
             }
         });
+        btnKeyExport.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                exportSigningKey();
+            }
+        });
+        btnKeyImport.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickSigningKey();
+            }
+        });
 
         requestNotificationPermissionIfNeeded();
+        refreshKeyInfo();
     }
 
     @Override
@@ -198,6 +226,25 @@ public final class MainActivity extends Activity implements PatchSession.Listene
                 copyFileToUri(pendingSaveSource, data.getData());
             }
             pendingSaveSource = null;
+            return;
+        }
+
+        if (requestCode == REQ_SAVE_KEY) {
+            final byte[] payload = pendingKeyPayload;
+            pendingKeyPayload = null;
+            if (resultCode != RESULT_OK || data == null || data.getData() == null
+                    || payload == null) {
+                return;
+            }
+            writeKeyBytesToUri(payload, data.getData());
+            return;
+        }
+
+        if (requestCode == REQ_PICK_KEY) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                return;
+            }
+            readKeyFile(data.getData());
         }
     }
 
@@ -443,6 +490,306 @@ public final class MainActivity extends Activity implements PatchSession.Listene
     }
 
     // ------------------------------------------------------------------
+    // 签名密钥
+    // ------------------------------------------------------------------
+    /**
+     * 读取本机密钥信息（证书指纹 + 保护方式）显示到界面上；第一次会触发生成。
+     *
+     * <p>有磁盘与密钥运算，放后台线程做。
+     */
+    private void refreshKeyInfo() {
+        if (txtKey == null) {
+            return;
+        }
+        Thread thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String value;
+                try {
+                    SigningKeyVault.get(MainActivity.this);
+                    value = getString(R.string.key_loaded,
+                            SigningKeyVault.fingerprint(MainActivity.this),
+                            SigningKeyVault.storageDescription());
+                } catch (Throwable t) {
+                    value = getString(R.string.key_unavailable, describe(t));
+                }
+                final String text = value;
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        txtKey.setText(text);
+                    }
+                });
+            }
+        }, "wear-swipe-key-info");
+        thread.start();
+    }
+
+    /**
+     * 导出密钥备份：先设口令，再选保存位置。
+     *
+     * <p>备份里是口令加密（PBKDF2 + AES-GCM）的密钥，换机器或重装应用后导入
+     * 即可继续用同一把密钥签名 —— 这是"覆盖安装不失效"的唯一凭据。
+     */
+    private void exportSigningKey() {
+        final EditText input = passwordInput();
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.key_export)
+                .setMessage(getString(R.string.key_export_message,
+                        SigningKeyVault.MIN_PASSWORD_LENGTH))
+                .setView(input)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.key_confirm,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                startExportSigningKey(
+                                        input.getText().toString().toCharArray());
+                            }
+                        })
+                .show();
+    }
+
+    private void startExportSigningKey(final char[] password) {
+        if (password.length < SigningKeyVault.MIN_PASSWORD_LENGTH) {
+            toast(getString(R.string.key_password_too_short,
+                    SigningKeyVault.MIN_PASSWORD_LENGTH));
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                byte[] payload = null;
+                try {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    SigningKeyVault.export(MainActivity.this, out, password);
+                    payload = out.toByteArray();
+                } catch (Throwable t) {
+                    error = describe(t);
+                } finally {
+                    java.util.Arrays.fill(password, '\0');
+                }
+                final byte[] data = payload;
+                final String failure = error;
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (failure != null) {
+                            toast(getString(R.string.key_failed, failure));
+                            return;
+                        }
+                        pendingKeyPayload = data;
+                        saveKeyTo();
+                    }
+                });
+            }
+        }, "wear-swipe-key-export").start();
+    }
+
+    /** 选定备份文件的保存位置。 */
+    private void saveKeyTo() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(SigningKeyVault.MIME_BACKUP);
+        intent.putExtra(Intent.EXTRA_TITLE, SigningKeyVault.exportFileName(this));
+        try {
+            startActivityForResult(intent, REQ_SAVE_KEY);
+        } catch (ActivityNotFoundException e) {
+            pendingKeyPayload = null;
+            toast("系统里找不到保存对话框");
+        }
+    }
+
+
+
+    /** 导入密钥：先确认会替换本机密钥，再选文件、输口令。 */
+    private void pickSigningKey() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.key_import)
+                .setMessage(getString(R.string.key_import_warning) + "\n\n"
+                        + getString(R.string.key_import_message))
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.key_confirm,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                pickKeyFile();
+                            }
+                        })
+                .show();
+    }
+
+    private void pickKeyFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                SigningKeyVault.MIME_BACKUP,
+                "application/x-pkcs12",
+                "application/octet-stream"});
+        try {
+            startActivityForResult(intent, REQ_PICK_KEY);
+        } catch (ActivityNotFoundException e) {
+            toast("系统里找不到文件选择器");
+        }
+    }
+
+    /** 把选中的密钥文件读进内存（有上限，避免误选大文件）。 */
+    private void readKeyFile(final Uri uri) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                byte[] data = null;
+                try {
+                    InputStream in = getContentResolver().openInputStream(uri);
+                    if (in == null) {
+                        throw new IOException("无法打开所选文件");
+                    }
+                    try {
+                        ByteArrayOutputStream out = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                            if (out.size() > MAX_KEY_FILE_BYTES) {
+                                throw new IOException("密钥文件过大（上限 "
+                                        + (MAX_KEY_FILE_BYTES / 1024 / 1024) + " MB）");
+                            }
+                        }
+                        data = out.toByteArray();
+                    } finally {
+                        in.close();
+                    }
+                } catch (Throwable t) {
+                    error = describe(t);
+                }
+                final byte[] bytes = data;
+                final String failure = error;
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (failure != null) {
+                            toast(getString(R.string.key_failed, failure));
+                            return;
+                        }
+                        askImportPassword(bytes, displayNameOf(uri));
+                    }
+                });
+            }
+        }, "wear-swipe-key-read").start();
+    }
+
+    private void askImportPassword(final byte[] data, String fileName) {
+        final EditText input = passwordInput();
+        new AlertDialog.Builder(this)
+                .setTitle(fileName)
+                .setMessage(R.string.key_import_message)
+                .setView(input)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.key_confirm,
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                importSigningKey(data,
+                                        input.getText().toString().toCharArray());
+                            }
+                        })
+                .show();
+    }
+
+    /** 用外部文件替换本机密钥，成功后之后所有输出都用这把密钥签名。 */
+    private void importSigningKey(final byte[] data, final char[] password) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                String fingerprint = null;
+                try {
+                    SigningKeyVault.importFrom(MainActivity.this, data, password);
+                    fingerprint = SigningKeyVault.fingerprint(MainActivity.this);
+                } catch (Throwable t) {
+                    error = describe(t);
+                } finally {
+                    java.util.Arrays.fill(password, '\0');
+                }
+                final String failure = error;
+                final String printed = fingerprint;
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (failure != null) {
+                            toast(getString(R.string.key_failed, failure));
+                        } else {
+                            toast(getString(R.string.key_imported, printed));
+                        }
+                        refreshKeyInfo();
+                    }
+                });
+            }
+        }, "wear-swipe-key-import").start();
+    }
+
+    /** 导出内容写入用户选定的位置。 */
+    private void writeKeyBytesToUri(final byte[] data, final Uri target) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                try {
+                    OutputStream out = getContentResolver().openOutputStream(target, "wt");
+                    if (out == null) {
+                        throw new IOException("无法写入所选位置");
+                    }
+                    try {
+                        out.write(data);
+                        out.flush();
+                    } finally {
+                        out.close();
+                    }
+                } catch (Throwable t) {
+                    error = describe(t);
+                }
+                final String failure = error;
+                mainHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (failure == null) {
+                            toast(getString(R.string.key_exported,
+                                    SigningKeyVault.fingerprint(MainActivity.this)));
+                        } else {
+                            toast(getString(R.string.key_failed, failure));
+                        }
+                    }
+                });
+            }
+        }, "wear-swipe-key-save").start();
+    }
+
+    /** 口令输入框（统一隐藏输入内容）。 */
+    private EditText passwordInput() {
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        input.setHint(R.string.key_password_hint);
+        return input;
+    }
+
+    /** 文件选择器给的 URI 可能没有可显示的名字，退回默认名。 */
+    private String displayNameOf(Uri uri) {
+        try {
+            String name = queryDisplayName(uri);
+            if (name != null && !name.isEmpty()) {
+                return name;
+            }
+        } catch (Throwable ignored) {
+            // 退回默认名
+        }
+        return getString(R.string.key_import);
+    }
+
+    // ------------------------------------------------------------------
     // 权限与工具
     // ------------------------------------------------------------------
 
@@ -512,6 +859,8 @@ public final class MainActivity extends Activity implements PatchSession.Listene
         edtParent.setEnabled(!running);
         setEnabledRecursive(radSigning, !running);
         btnPick.setEnabled(!running);
+        btnKeyExport.setEnabled(!running);
+        btnKeyImport.setEnabled(!running);
         btnStart.setEnabled(phase == PatchSession.Phase.READY);
 
         boolean showProgress = phase == PatchSession.Phase.PATCHING

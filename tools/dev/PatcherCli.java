@@ -6,6 +6,7 @@ import com.wearswipe.core.PatchOptions;
 import com.wearswipe.core.PatchReport;
 import com.wearswipe.core.Progress;
 import com.wearswipe.core.SigningConfig;
+import com.wearswipe.core.SigningKeyStore;
 import com.wearswipe.core.WearSwipePatcher;
 
 import java.io.File;
@@ -22,7 +23,12 @@ import java.io.File;
  *                              [--scheme v1|v2|v1+v2]
  *                              [--keystore FILE --storetype JKS --storepass P
  *                               --alias A --keypass P]
+ *                              [--save-key FILE] [--key FILE [--keypass P]]
  * </pre>
+ *
+ * <p>{@code --save-key} 的用法就是"第二次带同一个路径"：文件不存在时生成一把新密钥
+ * 并存下来（补丁成功后），已存在时直接复用。这样同一个应用重复补丁的输出签名一致，
+ * 新版本可以直接覆盖安装。
  */
 public final class PatcherCli {
 
@@ -99,6 +105,8 @@ public final class PatcherCli {
         char[] storePass = null;
         String alias = null;
         char[] keyPass = null;
+        File keyFile = null;
+        File saveKeyFile = null;
 
         for (int i = 3; i < args.length; i++) {
             String a = args[i];
@@ -128,17 +136,47 @@ public final class PatcherCli {
                 alias = args[++i];
             } else if ("--keypass".equals(a)) {
                 keyPass = args[++i].toCharArray();
+            } else if ("--key".equals(a)) {
+                keyFile = new File(args[++i]);
+            } else if ("--save-key".equals(a)) {
+                saveKeyFile = new File(args[++i]);
             } else {
                 throw new IllegalArgumentException("未知参数: " + a);
             }
         }
 
+        if (keyStore != null && (keyFile != null || saveKeyFile != null)) {
+            throw new IllegalArgumentException(
+                    "--keystore 与 --key / --save-key 只能选一种");
+        }
+
+        // 复用密钥的两种来源：--key 指定的文件，以及 --save-key 指向的已存在文件
+        File reuseFile = keyFile;
+        if (reuseFile == null && saveKeyFile != null && saveKeyFile.isFile()) {
+            reuseFile = saveKeyFile;
+        }
+
+        // --save-key 指向的密钥还不存在时，先在这里生成（补丁成功后再落盘）
+        boolean saveNewKey = saveKeyFile != null && reuseFile == null;
+
         if (keyStore != null) {
             signing = SigningConfig.fromKeyStore(keyStore, storeType, storePass, alias, keyPass);
+        } else if (reuseFile != null) {
+            if (!reuseFile.isFile()) {
+                throw new IllegalArgumentException(
+                        "找不到密钥文件: " + reuseFile.getAbsolutePath());
+            }
+            signing = SigningKeyStore.fromAnyFormat(SigningKeyStore.readAll(reuseFile), keyPass);
+            System.out.println("复用密钥文件: " + reuseFile.getAbsolutePath());
+        } else if (saveNewKey) {
+            signing = SigningConfig.generateSelfSigned("WearSwipePatcher");
         }
 
         System.out.println("###### PATCH");
         System.out.println(options);
+        if (signing != null) {
+            System.out.println("签名密钥: " + SigningKeyStore.describe(signing));
+        }
         System.out.println("in : " + in.getAbsolutePath() + " (" + in.length() + " bytes)");
 
         final long start = System.currentTimeMillis();
@@ -161,6 +199,20 @@ public final class PatcherCli {
             System.out.println("签名: " + result.getVerification().describeSchemes()
                     + " verified=" + result.getVerification().isVerified());
         }
+        if (report.getSignerFingerprint() != null) {
+            System.out.println("签名指纹: " + report.getSignerFingerprint()
+                    + (report.isSignerFingerprintFromStoredKey()
+                            ? "（指定/复用的密钥）" : "（本次临时生成）"));
+        }
+        if (saveNewKey) {
+            File parent = saveKeyFile.getAbsoluteFile().getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                System.out.println("警告: 无法创建目录 " + parent.getAbsolutePath());
+            }
+            SigningKeyStore.saveBundle(signing, saveKeyFile);
+            System.out.println("密钥已保存: " + saveKeyFile.getAbsolutePath()
+                    + "（下次带同样的 --save-key 即复用这把密钥）");
+        }
         System.out.println("耗时: " + (System.currentTimeMillis() - start) + " ms");
         System.out.println("###### END");
     }
@@ -172,6 +224,7 @@ public final class PatcherCli {
         System.out.println("  patch   <in.apk> <out.apk> [--style NAME] [--parent STYLE]"
                 + " [--all-activities] [--application] [--no-auto-parent]"
                 + " [--no-align] [--no-verify] [--scheme v1|v2|v1+v2]"
-                + " [--keystore FILE --storetype JKS --storepass P --alias A --keypass P]");
+                + " [--keystore FILE --storetype JKS --storepass P --alias A --keypass P]"
+                + " [--save-key FILE] [--key FILE [--keypass P]]");
     }
 }

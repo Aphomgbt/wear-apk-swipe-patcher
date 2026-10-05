@@ -109,9 +109,12 @@ public final class WearSwipePatcher {
             }
 
             callback.onProgress(90, "重新签名");
+            boolean fromStoredKey = signingConfig != null;
             if (signingConfig == null) {
                 signingConfig = SigningConfig.generateSelfSigned("WearSwipePatcher");
             }
+            report.setSignerFingerprint(SigningKeyStore.fingerprintOf(signingConfig));
+            report.setSignerFingerprintFromStoredKey(fromStoredKey);
             PatchOptions.SigningScheme scheme = options.getSigningScheme();
             if (!scheme.isV1Enabled() && minSdk < ApkSignerTool.API_LEVEL_N) {
                 // 只签 V2 就意味着没有 V1 签名，Android 7.0 以下装不上 —— 这是用户选择的必然代价

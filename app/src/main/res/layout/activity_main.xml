@@ -104,6 +104,34 @@
 
         </RadioGroup>
 
+        <TextView style="@style/SectionTitle" android:text="@string/section_signing_key" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:text="@string/key_explain"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/txt_key"
+            style="@style/Mono"
+            android:text="@string/key_loading" />
+
+        <Button
+            android:id="@+id/btn_key_export"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/key_export" />
+
+        <Button
+            android:id="@+id/btn_key_import"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/key_import" />
+
         <Button
             android:id="@+id/btn_start"
             android:layout_width="match_parent"

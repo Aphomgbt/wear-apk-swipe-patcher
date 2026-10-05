@@ -4,6 +4,7 @@
 
 把任意 APK 的「右滑返回」关掉，并在**手机上**重新签名输出一个可直接安装的 APK。
 全程没有 PC 参与：不需要 aapt2 / zipalign / apksigner / apktool 等外部可执行文件。
+签名密钥会**存在应用里重复使用**（可导出/导入备份），所以同一个应用的新版本能直接覆盖安装。
 
 ## 下载
 
@@ -55,7 +56,7 @@ Android SDK 位置通过 `local.properties` 里的 `sdk.dir` 或环境变量 `AN
 
 ```bash
 ./build.sh                 # 编译 core -> build/core.jar
-./build.sh test app.apk    # 编译 + 64 项自检 + 端到端补丁 + 差异对比 + 对齐检查
+./build.sh test app.apk    # 编译 + 115 项自检 + 端到端补丁 + 差异对比 + 对齐检查 + 密钥复用验证
 ```
 
 ### 命令行单独使用
@@ -68,6 +69,9 @@ java -cp "$CP" dev.PatcherCli patch   app.apk out.apk
 java -cp "$CP" dev.PatcherCli patch   app.apk out.apk --parent UnityThemeSelector
 java -cp "$CP" dev.PatcherCli patch   app.apk out.apk --scheme v1     # 只签 V1，不写 v2 签名块
 java -cp "$CP" dev.PatcherCli patch   app.apk out.apk --scheme v2     # 只签 V2，不新增 META-INF
+java -cp "$CP" dev.PatcherCli patch   app.apk out.apk --save-key my.wskey   # 首次生成并保存密钥
+java -cp "$CP" dev.PatcherCli patch   app.apk out2.apk --save-key my.wskey  # 再打一次：复用同一把
+java -cp "$CP" dev.PatcherCli patch   app.apk out.apk --key my.wskey --keypass 123456  # 复用已有密钥文件
 java -cp "$CP" dev.PatcherCli verify  out.apk
 java -cp "$CP" dev.PatcherCli verify  out.apk --scheme v2 --min-sdk 24
 ```
@@ -83,6 +87,8 @@ java -cp "$CP" dev.PatcherCli verify  out.apk --scheme v2 --min-sdk 24
 | `--no-auto-parent` | 关闭父主题自动探测 |
 | `--no-align` / `--no-verify` | 跳过 zipalign / 签名后校验 |
 | `--scheme v1\|v2\|v1+v2` | 输出签名方案，默认 `v1+v2`（见下） |
+| `--save-key FILE` | 把本次用的密钥保存到 FILE；下次带同一个 FILE 就复用它（文件已存在则直接复用） |
+| `--key FILE [--keypass P]` | 复用 FILE 里的密钥：本工具的 `.wskey`，或你自己的 PKCS#12 / JKS 密钥库 |
 | `--keystore … --storepass … --alias … --keypass …` | 用自带密钥库签名；不给则运行时生成自签名证书 |
 
 `verify` 可用选项：`--min-sdk N`（默认 21）、`--scheme v1|v2|v1+v2`（默认 `v1+v2`）。
@@ -113,6 +119,36 @@ java -cp "$CP" dev.PatcherCli verify  out.apk --scheme v2 --min-sdk 24
   说明产物装不到 Android 7.0 以下。
 - 自检里有独立见证：除了 apksig，还会直接数输出里 `META-INF/*.SF|*.RSA|*.DSA|*.EC`
   的条目数，确认「该写 V1 就真写了、该跳过就真没写」。
+
+## 签名密钥：存下来复用，而不是每次换一把
+
+重新签名意味着**输出包的签名和原包不同**。如果每次打补丁都换一把新密钥，那么同一款应用的
+新版本就没法覆盖安装（系统会认为签名不一致），只能先卸载再装 —— 用户数据、登录态全丢。
+
+所以从 1.0 起，密钥是**持久化复用**的：
+
+| 场景 | 行为 |
+|---|---|
+| App 第一次打补丁 | 生成一把自签名密钥（CN = `WearSwipePatcher`，有效期 30 年），存在应用私有目录 `files/signing/`（系统沙箱保护，其他应用读不到）。**优先**用 Android Keystore 里的 AES 密钥把它包裹后存成 `signing-key.bin`；设备/系统不支持时才退回明文 `signing-key.plain`（界面会如实写成「应用私有目录（系统沙箱保护）」） |
+| App 之后每次 | 直接复用同一把；界面顶部的「签名密钥」区显示它的指纹和保护方式 |
+| 换了手机 / 重装 App | 用「导出密钥备份」导出 `.wskey` 文件（默认名 `wear-swipe-signing-key.wskey`，可存网盘/U 盘），在新设备用「导入密钥备份」恢复，签名就接上了 |
+| 想接管自己原有的密钥 | 「导入密钥备份」也认 **PKCS#12 / JKS 密钥库**（自动识别格式），指纹与原库一致 |
+| 命令行 | `--save-key key.wskey`：文件不存在就生成并保存，已存在就直接复用（所以第二次带同一个路径即可） |
+| 命令行（已有密钥文件） | `--key key.wskey [--keypass P]` 复用任意受支持的密钥文件 |
+
+两种载体格式（都在 `SigningKeyStore`，纯 JDK 实现，Android 8.0+ 都能跑）：
+
+| 格式 | 文件头 | 加密 | 用途 |
+|---|---|---|---|
+| 明文载体 | `WSKB` | 无 | 设备私有目录内的日常保存（`files/signing/`，权限 0600） |
+| 带口令备份 | `WSKE` | PBKDF2-HMAC-SHA256（120,000 次，16 B 随机盐）+ AES-256-GCM（12 B 随机 IV，128 位认证标签） | 导出/导入；口令至少 6 位。**口令错或文件被改动过一个字节都会明确报错**，而不是给出坏密钥 |
+
+> ⚠️ 导出的 `.wskey` 备份 = 你的签名钥匙。别人拿到它就能冒名发布你打的包。
+> 建议用强口令并通过可信渠道传输；不打算长期维护这套包的话，也不要到处留备份。
+
+指纹（叶子证书的 SHA-256，冒号分隔）会同时出现在：界面「签名密钥」区、补丁报告的
+「签名指纹」行、命令行输出。两次补丁的指纹一样，就说明可以直接覆盖安装（自检里有对应用例，
+并且是用 apksig **直接从输出 APK 里读证书**来交叉验证的，不是只信自己的报告）。
 
 ## 父主题是怎么选的
 
@@ -157,19 +193,22 @@ App 在**手机上**运行：SAF 选一个 APK → 本机打完补丁 → 保存
 | **清单里不写 `package` 属性** | AGP 8+ 要求包名写在 `namespace`；`build-apk.sh` 用 sed 注入一份临时副本给 `aapt2 link`。同一份清单两条构建路径都能用 |
 | **自带 `ApkShareProvider`（40 行 ContentProvider）** | 不引入 AndroidX 就没有 `FileProvider`。自己写一个，并严格限制只能访问应用自己的输出目录 |
 | **core 通过 `sourceSets` 直接编进 app** | 不建 Gradle 子项目，避免"Gradle 版"和"build.sh 版"两份实现不同步 |
+| **签名密钥默认持久化复用** | 每次换新密钥的话，同一个应用的新版本只能卸载重装。持久密钥存在应用私有目录，并提供带口令的导出/导入，跨设备也能接上签名 |
 | **手工构建时用 `--res-jar` 带入 ARSCLib 的框架资源** | `build-apk.sh` 不走 AGP，不会自动打包 jar 资源；而 ARSCLib 靠 `getResourceAsStream("/frameworks/android/android-XX.apk")` 解析框架属性。AGP 路径会自动包含，手工路径必须显式指定 |
 
 ### App 界面
 
-单屏，四步：
+单屏，从上到下五块：
 
-1. **选择要处理的 APK** —— SAF 选文件，立刻显示分析结果（包名/版本/minSdk/启动 Activity/当前主题/是否已打过补丁）
-2. **选项** —— 是否同时改 `<application>`、是否改所有 Activity、手动指定父主题（留空自动探测）、
+1. **签名密钥** —— 显示当前指纹；「导出密钥备份」「导入密钥备份」。第一次进来会自动生成一把并显示指纹
+2. **选择要处理的 APK** —— SAF 选文件，立刻显示分析结果（包名/版本/minSdk/启动 Activity/当前主题/是否已打过补丁）
+3. **选项** —— 是否同时改 `<application>`、是否改所有 Activity、手动指定父主题（留空自动探测）、
    **输出签名方案**（V1 + V2 / 仅 V2 / 仅 V1，默认 V1 + V2）
-3. **开始打补丁** —— 进度条 + 实时日志，前台通知同步显示
-4. **结果** —— 完整补丁报告 + 签名校验结果 + 「保存到…」/「分享给其它应用」/「安装到本机」
+4. **开始打补丁** —— 进度条 + 实时日志，前台通知同步显示
+5. **结果** —— 完整补丁报告（含签名指纹）+ 签名校验结果 + 「保存到…」/「分享给其它应用」/「安装到本机」
 
-选完文件就会警告：成品签名与原始不同，装到手表前需先卸载原版。
+选完文件就会警告：成品签名与原始 APK 不同，**第一次**装到手表前需要先卸载原版；
+之后只要一直用同一把密钥（默认行为），新版本就能直接覆盖安装。
 
 ## 模块结构
 
@@ -183,21 +222,24 @@ core/    纯 JVM 补丁逻辑（Android 端直接复用，零 Android 依赖）
     ManifestUtil      清单/资源表只读工具
     ApkSignerTool     apksig 封装（按 minSdk 自动选 V1/V2/V3）
     SigningConfig     签名配置（自签名 / 密钥库两种来源）
+    SigningKeyStore   签名密钥的持久化：WSKB 明文载体 / WSKE 带口令备份 / 导入 PKCS#12、JKS
     PatchOptions      参数
-    PatchReport       结果快照
+    PatchReport       结果快照（含签名指纹）
     Progress          进度回调
     crypto/           手写 DER + 运行时自签名 X.509 证书
 app/     Android 手机端 App（零 AndroidX）
   com/wearswipe/app/
-    MainActivity      SAF 选文件 / 选项 / 进度 / 结果
-    PatchService      前台服务，跑补丁
+    MainActivity      SAF 选文件 / 签名密钥区 / 选项 / 进度 / 结果
+    PatchService      前台服务，跑补丁（补丁前从密钥库取出密钥）
     PatchSession      进程内共享状态 + 监听
+    SigningKeyVault   App 侧的密钥保管：读写 files/signing、导出/导入备份、指纹
     OutputStore       成品 APK 的落地目录与命名
     ApkShareProvider  极简 ContentProvider（替代 AndroidX FileProvider）
 tools/dev/  桌面调试工具
     PackageApk        aapt2 base.apk + d8 dex -> 合并/对齐/签名（给 build-apk.sh 用）
     PatcherCli        patch / inspect / verify 命令行
-    CoreSelfTest      64 项自检（不依赖 JUnit）
+    CoreSelfTest      自检（不依赖 JUnit；算法 + 真实 APK 端到端 + 密钥复用）
+    make-testfixture.sh  生成多 Activity 夹具 APK（可选，需要 aapt2）
     ApkDiff           按解压后内容 SHA-256 逐条目对比两个 APK
     AlignCheck        手工解析 zip，检查 STORED 条目对齐
     Probe             资源表 / 清单结构探查
@@ -231,7 +273,7 @@ build-apk.sh  构建 App APK（aapt2 + d8 + core 签名，不依赖 Gradle）
 
 ### App 本身的验证
 
-`build-apk.sh` 产出 `build/wear-apk-swipe-patcher.apk`（3,471,033 B），用 Android SDK 官方工具核对：
+`build-apk.sh` 产出 `build/wear-apk-swipe-patcher.apk`（3,487,417 B），用 Android SDK 官方工具核对：
 
 | 检查 | 工具 | 结果 |
 |---|---|---|
@@ -243,10 +285,16 @@ build-apk.sh  构建 App APK（aapt2 + d8 + core 签名，不依赖 Gradle）
 | 依赖安全 | 高危包扫描 | `java/nio/file`、`java/awt`、`javax/swing`、`javax/imageio`、`sun/`、`com/sun/` 全部 **0 引用** |
 | Gradle 路径 | `gradle --no-daemon assembleDebug` | `BUILD SUCCESSFUL in 5m 49s`，产出 APK 同样通过 apksigner 校验 |
 
-> **关于 APK 的 sha256**：`build-apk.sh` 每次构建都会**新生成一张自签名证书**，
-> 所以同一个源码每次构建出来的 sha256 都不一样（体积则保持一致，都是 3,471,033 B）。
-> 要校验下载到的成品，请以 [Releases](https://github.com/Aphomgbt/wear-apk-swipe-patcher/releases)
-> 页面公布的 sha256 为准 —— 那个是固定的。
+> **关于 APK 的 sha256**：`build-apk.sh` 每次构建都会**新生成一张自签名证书**，所以同一个源码
+> 每次构建出来的 sha256 都不一样（体积一致：3,487,417 B）。下面这笔是 **v1.0 Release 里那份成品**
+> 的 sha256（也就是「签名密钥持久化」这一版），Release 页面同时公布了它：
+>
+> ```text
+> 9a73839f867112a26823e431a987ad602bf339b505c3c171221f43790aba9d89  wear-apk-swipe-patcher-v1.0.apk
+> ```
+>
+> 校验方法：`sha256sum wear-apk-swipe-patcher-v1.0.apk`。下载到的包只要 sha256 对得上，
+> 就说明和我本地构建、并且通过上表所有检查的是同一份文件。
 
 **踩到的坑**（已修）：`PackageApk` 一开始只把 `.class` 转成 dex 打进 APK，漏掉了 jar 里的运行时资源。
 ARSCLib 是用 `AndroidFrameworks.class.getResourceAsStream("/frameworks/android/android-XX.apk")`
@@ -264,34 +312,63 @@ manifest placeholder 机制，**`aapt2` 不会替换它**。于是手工构建�
 
 **注意**：本机 `apksigner` 能验、`aapt2` 能解析、dex 与框架资源都完整，但**没有在真机上装过、跑过**。
 
+## 适用范围（改得动什么、改不动什么）
+
+| 能关掉 | 关不掉 |
+|---|---|
+| Wear OS / 手机上 **Activity 级别**的「右滑返回」（system gesture，实现就是主题里的 `android:windowSwipeToDismiss`） | Compose 的 `SwipeDismissBox`、View 的 `ViewDragHelper`、Unity/游戏自绘的手势 —— 这些是应用自己在代码里画的，**资源层改不动** |
+| 单个 APK（含已签名包，重新签名输出） | split APK / App Bundle（`.apks`、`.aab`），本项目只接受单个 APK |
+| 任何 minSdkVersion 的包（核心逻辑不依赖 Android 版本） | 依赖原签名的能力（Google 登录、Firebase 校验、内购）—— 重新签名后这些可能失效 |
+
+一句话：这是**资源层补丁**，只改 `AndroidManifest.xml` 与 `resources.arsc` 两个文件，
+不碰 dex / so / res，所以它能做的就只到「让系统不再把右滑当返回手势」这一步。
+
 ## 已知局限
 
-- **只覆盖 system/activity 级别的右滑返回**。Compose 的 `SwipeDismissBox`、
-  View 里 `ViewDragHelper`、游戏自绘手势**不在覆盖范围内** —— 那些是应用自己画的，
-  资源层改不动。
-- Wear OS 各版本对 `windowSwipeToDismiss` 的行为不完全一致；**Wear OS 2 已实测可用**，
-  Wear OS 3/4 仍需按系统版本分别确认。
-- 重新签名后应用签名变了，**必须先卸载原版再安装**（除非原本就是同一密钥）。
-  依赖原签名的功能（Google 登录、Firebase 校验、应用内购）可能失效。
+- Wear OS 各版本对 `windowSwipeToDismiss` 的处理不完全一致：**Wear OS 2 上已经实测可用**
+  （成品装到手表、右滑返回确实被关闭）；Wear OS 3/4 需要按系统版本分别确认。
+- 本机重跑只能做到「apksig 校验通过 + 输出 APK 里的签名指纹稳定」这一层，
+  装到设备上的效果以你手上的手表为准（见下面的「验证情况」）。
+- 重新签名后应用签名变了，第一次装要**先卸载原版再安装**。之后只要用同一把密钥
+  （App 默认行为），后续版本可直接覆盖安装。
 - 二次打包会丢失原始 zip 条目的时间戳（apksig 归一到固定时间），对运行无影响。
-- 当前不处理 split APK / APK bundle，只接受单个 APK。
 - 选了「仅 V2」签名后产物没有 V1 签名，**装不到 Android 7.0 以下**（补丁报告里会有对应警告）。
   这也是为什么默认是 V1 + V2。
+- 导出的 `.wskey` 就是你的签名钥匙，泄露 = 别人能冒名发布你打的包。
 
-## 未完成 / 验证情况
+## 测试矩阵
+
+`./build.sh test "<你的.apk>"` 会全部跑一遍（无 JUnit、无网络；真实 39 MB Unity 游戏作输入时约 1~2 分钟）：
+
+| # | 层面 | 用例 | 独立见证 | 结果 |
+|---|---|---|---|---|
+| 1 | 自签名证书 | `core.crypto` 手写 DER：CN / issuer / X.509v3 / SHA256withRSA / 有效期 30 年 / 5 年短证书 | 解析出的 `X509Certificate` 字段 | ✅ |
+| 2 | 参数 | `PatchOptions` 默认值、空样式名被拒、`SigningScheme.parse` 各种输入 | —— | ✅ |
+| 3 | 密钥载体 | `WSKB` 明文往返、`saveBundle`/`loadBundle` 文件往返、指纹是 95 字符冒号形式 | 文件字节头 + 指纹比对 | ✅ |
+| 4 | 密钥加密 | `WSKE`：口令正确解得原指纹；**口令错**报错；**密文改 1 字节**报错；`fromAnyFormat` 自动识别两种载体；导入用户自己的 PKCS#12 | AES-GCM 认证标签 | ✅ |
+| 5 | 真实 APK 补丁 | 补丁应用、资源 ID 分配、包名不变、二次补丁幂等（ID 不重复分配） | `ApkInspector` 回读输出 | ✅ |
+| 6 | 三种签名方案 | V1+V2 / 仅 V1 / 仅 V2 各打一次真实补丁 | apksig 校验 + **直接数 `META-INF` 条目** + 校验起点 API 版本 | ✅ |
+| 7 | **密钥复用（核心）** | 同一 `.wskey` 打两次 → 两个输出 APK 里读出的**签名证书指纹相同**；不指定密钥时指纹必然不同（反证） | 用 apksig 从输出 APK 里读证书，而不是只信自己的报告 | ✅ |
+| 8 | 多 Activity 夹具 | 4 个 Activity 各自继承**自己**原来的主题、不覆盖原 APK 的同名样式、二次补丁不漂移 | 由 `make-testfixture.sh` 用 aapt2 现生成 | ✅ |
+| 9 | 逐条目差异 | `ApkDiff` 对比原始与输出：1333 条中仅 `AndroidManifest.xml`、`resources.arsc` 2 条非签名内容变化 | 解压后内容 SHA-256 | ✅ |
+| 10 | 对齐 | `AlignCheck`：374 个 STORED 条目 0 个未 4 字节对齐 | 手工解析 zip 本地头 | ✅ |
+| 11 | 命令行密钥复用 | `--save-key` 第一次生成、第二次复用；两次指纹不一致就让脚本直接失败 | 复现 README 里承诺的用法 | ✅ |
+| 12 | App 产物 | `apksigner verify` / `aapt2 dump badging` / 对齐 / dex 类名 / ARSCLib 框架资源 | Android SDK 官方工具 | ✅ |
+| 13 | Gradle 路径 | `./gradlew assembleDebug` 同样产出自签名 APK | —— | ✅ |
+
+自检汇总：**115 项通过 / 0 失败**（`===== SELF TEST: passed=115 failed=0 =====`）。
+
+## 验证情况
 
 | 环节 | 状态 |
 |---|---|
-| core 逻辑 + 64 项自检（真实 39 MB APK 作输入） | ✅ 全部通过 |
-| 三种签名方案端到端（V1+V2 / 仅 V2 / 仅 V1） | ✅ 全部通过 |
-| 命令行路径（`inspect` / `patch` / `verify`） | ✅ 实测通过 |
-| App 构建产物（签名 / 对齐 / 清单 / dex / 框架资源） | ✅ 用 Android SDK 官方工具核对 |
-| **成品装到真实手表** | ✅ **Wear OS 2 手表实测可用，右滑返回已被关闭** |
-| App 装到手机上跑一遍完整 UI 流程 | ⏳ 未在真机上跑过 |
-| Wear OS 3 / 4 | ⏳ 未验证 |
+| 补丁产物生成（本机，apksig 校验通过，签名指纹稳定） | ✅ |
+| **成品装到真实手表** | ✅ **Wear OS 2 手表实测可用，右滑返回已被关闭**（1.0 首发产物；本次新增的密钥持久化不改补丁逻辑） |
+| App 装到手机上跑完整 UI 流程（含导出/导入密钥） | ⏳ 未在真机上跑过 |
+| Wear OS 3 / 4 的具体行为 | ⏳ 未验证 |
 
-仍未验证的部分：手机端 App 的完整 UI 流程没有真机跑过（不过它和命令行走的是同一份 core，
-风险较低）；Wear OS 3/4 对 `windowSwipeToDismiss` 的支持不一致，需要按系统版本分别确认。
+说明：手机端 App 与命令行走的是同一份 core（`./build.sh test` 覆盖的就是这个 core），
+所以 UI 流程的风险主要在 SAF 选文件与前台服务调度，而不在补丁逻辑本身。
 
 ## 许可证
 

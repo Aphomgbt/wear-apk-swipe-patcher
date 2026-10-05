@@ -14,6 +14,8 @@ import android.os.PowerManager;
 
 import com.wearswipe.core.PatchOptions;
 import com.wearswipe.core.Progress;
+import com.wearswipe.core.SigningConfig;
+import com.wearswipe.core.SigningKeyStore;
 import com.wearswipe.core.WearSwipePatcher;
 
 import java.io.File;
@@ -135,7 +137,10 @@ public final class PatchService extends Service {
     private void runPatch(File input, File output, PatchOptions options) {
         try {
             final WearSwipePatcher patcher = new WearSwipePatcher(options);
-            WearSwipePatcher.Result result = patcher.patch(input, output, null, new Progress() {
+            // 复用本机保存的密钥：同一个应重复处理时输出签名一致，可直接覆盖安装
+            SigningConfig signingConfig = resolveSigningConfig();
+            WearSwipePatcher.Result result = patcher.patch(input, output, signingConfig,
+                    new Progress() {
                 @Override
                 public void onProgress(int percent, String message) {
                     PatchSession.progress(percent, message);
@@ -160,6 +165,30 @@ public final class PatchService extends Service {
             releaseWakeLock();
             stopForegroundCompat();
             stopSelf();
+        }
+    }
+
+    /**
+     * 取本机保存的签名密钥（第一次会生成并保存）。
+     *
+     * <p>为什么必须复用同一把：早先每次补丁现生成一张自签名证书，同一个应用
+     * 两次出的包签名不同，后一次装不进前一次的位置，必须先卸载。密钥落盘以后，
+     * 之后所有输出都能覆盖安装前面的版本。
+     *
+     * <p>读不出来时退回一次性密钥（返回 {@code null}），并在日志里如实说明后果。
+     */
+    private SigningConfig resolveSigningConfig() {
+        try {
+            boolean existed = SigningKeyVault.hasStoredKey(this);
+            SigningConfig config = SigningKeyVault.get(this);
+            PatchSession.log((existed ? "复用本机签名密钥: " : "已生成并保存本机签名密钥: ")
+                    + SigningKeyStore.fingerprintOf(config)
+                    + "（" + SigningKeyVault.storageDescription() + "）");
+            return config;
+        } catch (Throwable t) {
+            PatchSession.log("警告: 无法使用本机签名密钥（" + describe(t)
+                    + "）。本次改用一次性密钥，输出的 APK 无法覆盖安装之前的版本。");
+            return null;
         }
     }
 

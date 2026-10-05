@@ -34,6 +34,7 @@ Thumbs.db
 *.bks
 *.pem
 *.key
+*.wskey
 
 # ---- 测试产物：本工具专门用来改 APK，别把测试用的 APK 误传上来 ----
 *.apk

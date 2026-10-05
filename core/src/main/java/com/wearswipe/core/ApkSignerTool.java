@@ -34,15 +34,18 @@ public final class ApkSignerTool {
         private final boolean v3;
         private final int minCheckedPlatformVersion;
         private final List<String> errors;
+        private final List<String> signerFingerprints;
 
         VerifyResult(boolean verified, boolean v1, boolean v2, boolean v3,
-                     int minCheckedPlatformVersion, List<String> errors) {
+                     int minCheckedPlatformVersion, List<String> errors,
+                     List<String> signerFingerprints) {
             this.verified = verified;
             this.v1 = v1;
             this.v2 = v2;
             this.v3 = v3;
             this.minCheckedPlatformVersion = minCheckedPlatformVersion;
             this.errors = Collections.unmodifiableList(errors);
+            this.signerFingerprints = Collections.unmodifiableList(signerFingerprints);
         }
 
         public boolean isVerified() {
@@ -73,6 +76,21 @@ public final class ApkSignerTool {
 
         public List<String> getErrors() {
             return errors;
+        }
+
+        /**
+         * 从 APK 里实际读出来的签名者证书 SHA-256 指纹（大写、冒号分隔）。
+         *
+         * <p>这是"看得到的证据"：只要两次输出的指纹一样，就说明用的是同一把密钥，
+         * 后一次的包可以直接覆盖安装前一次的包。
+         */
+        public List<String> getSignerFingerprints() {
+            return signerFingerprints;
+        }
+
+        /** 第一个签名者证书的指纹；没读到证书时返回 {@code null}。 */
+        public String getSignerFingerprint() {
+            return signerFingerprints.isEmpty() ? null : signerFingerprints.get(0);
         }
 
         public String describeSchemes() {
@@ -162,11 +180,19 @@ public final class ApkSignerTool {
         for (Object issue : result.getErrors()) {
             errors.add(String.valueOf(issue));
         }
+        java.util.ArrayList<String> fingerprints = new java.util.ArrayList<String>();
+        for (java.security.cert.X509Certificate certificate : result.getSignerCertificates()) {
+            String fingerprint = SigningKeyStore.fingerprintOf(certificate);
+            if (fingerprint != null && !fingerprints.contains(fingerprint)) {
+                fingerprints.add(fingerprint);
+            }
+        }
         return new VerifyResult(result.isVerified(),
                 result.isVerifiedUsingV1Scheme(),
                 result.isVerifiedUsingV2Scheme(),
                 result.isVerifiedUsingV3Scheme(),
                 minChecked,
-                errors);
+                errors,
+                fingerprints);
     }
 }

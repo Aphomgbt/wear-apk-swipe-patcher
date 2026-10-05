@@ -16,14 +16,31 @@
     <string name="opt_scheme_v2">仅 V2（不写 META-INF，需 Android 7.0 以上）</string>
     <string name="opt_scheme_v1">仅 V1（不写 v2 签名块）</string>
 
-    <string name="start">3. 开始打补丁</string>
+    <string name="start">4. 开始打补丁</string>
     <string name="cancel">取消</string>
     <string name="section_log">运行日志</string>
 
-    <string name="section_result">4. 结果</string>
+    <string name="section_result">5. 结果</string>
     <string name="save_apk">保存 / 分享 APK</string>
     <string name="install_here">安装到本机</string>
     <string name="restart">再处理一个</string>
+
+    <string name="section_signing_key">3. 签名密钥（本机固定）</string>
+    <string name="key_explain">补丁前会先确定一把存放在本机的签名密钥，之后所有输出都用它。这样同一个应用重复处理时签名一致，新版本可以直接覆盖安装，不必先卸载。换机器或重装应用后用「导入签名密钥」恢复即可。</string>
+    <string name="key_loading">正在读取签名密钥…</string>
+    <string name="key_loaded">签名密钥: %1$s\n保存位置: %2$s</string>
+    <string name="key_unavailable">签名密钥不可用：%1$s\n（可以先导出备份，或导入一把已有的密钥）</string>
+    <string name="key_export">导出签名密钥（备份）</string>
+    <string name="key_import">导入签名密钥（恢复 / 接管自有密钥）</string>
+    <string name="key_export_message">口令至少 %1$d 位。请妥善保存导出文件和口令：恢复签名必须靠它们，丢了就没法再覆盖安装本工具生成的 APK。</string>
+    <string name="key_import_message">选择备份文件（.wskey）或你的 PKCS#12 密钥库，再输入相应口令。导入后，之后所有输出都用这把密钥签名。</string>
+    <string name="key_password_hint">口令</string>
+    <string name="key_confirm">确定</string>
+    <string name="key_password_too_short">口令至少 %1$d 位</string>
+    <string name="key_exported">已导出签名密钥备份。指纹: %1$s</string>
+    <string name="key_imported">已导入签名密钥。指纹: %1$s</string>
+    <string name="key_import_warning">导入会替换本机当前密钥。如果之前的成品还要继续覆盖安装，请先导出旧密钥备份，否则那些 APK 只能卸载重装。</string>
+    <string name="key_failed">签名密钥操作失败：%1$s</string>
 
     <string name="notif_channel_name">打补丁进度</string>
     <string name="notif_title">正在给 APK 打补丁</string>
@@ -31,7 +48,7 @@
     <string name="err_no_file">请先选择一个 APK</string>
     <string name="err_not_patchable">这个 APK 无法处理：%1$s</string>
 
-    <string name="warn_repack">已成品的 APK 与原始版本签名不同。装到手表前需要先卸载原版；依赖原签名的功能（Google 登录 / Firebase 校验 / 应用内购）可能失效。</string>
+    <string name="warn_repack">成品用的是本机固定的自签名密钥，与原始版本不同：第一次装到手表前要先卸载原版。之后本工具再生成的版本签名一致，可以直接覆盖安装，不必卸载。依赖原签名的功能（Google 登录 / Firebase 校验 / 应用内购）可能失效。</string>
 
     <string name="saved_to">已保存到：%1$s</string>
     <string name="save_failed">保存失败：%1$s</string>

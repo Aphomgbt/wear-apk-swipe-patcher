@@ -88,17 +88,29 @@ public final class SigningConfig {
     public static SigningConfig fromKeyStore(File keyStoreFile, String storeType,
                                              char[] storePass, String alias, char[] keyPass)
             throws GeneralSecurityException, IOException {
+        InputStream in = new FileInputStream(keyStoreFile);
+        try {
+            return fromKeyStore(in, storeType, storePass, alias, keyPass);
+        } finally {
+            closeQuietly(in);
+        }
+    }
+
+    /**
+     * 从 JKS / PKCS12 密钥库的字节流读取（供导入内存中的密钥文件用）。
+     *
+     * @param in        密钥库数据流，方法内部会读完
+     * @param storeType {@code JKS} / {@code PKCS12}，为 {@code null} 时用平台默认类型
+     */
+    public static SigningConfig fromKeyStore(InputStream in, String storeType,
+                                             char[] storePass, String alias, char[] keyPass)
+            throws GeneralSecurityException, IOException {
         String type = storeType;
         if (type == null || type.isEmpty()) {
             type = KeyStore.getDefaultType();
         }
         KeyStore keyStore = KeyStore.getInstance(type);
-        InputStream in = new FileInputStream(keyStoreFile);
-        try {
-            keyStore.load(in, storePass);
-        } finally {
-            closeQuietly(in);
-        }
+        keyStore.load(in, storePass);
 
         String entryAlias = alias;
         if (entryAlias == null) {

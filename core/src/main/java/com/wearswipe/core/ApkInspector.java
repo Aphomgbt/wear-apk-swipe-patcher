@@ -48,8 +48,17 @@ public final class ApkInspector {
         private String patchStyleParentDescription;
         private boolean swipeToDismissDisabled;
 
+        private final List<String> activityThemes = new ArrayList<String>();
+
         private boolean patchable;
         private String patchableReason;
+
+        /** 启动 Activity 最终生效的主题确实是本工具写的补丁样式（名字对得上，且内容关了 swipe）。 */
+        private boolean launcherThemeIsPatchStyle;
+        /** 有多少个 Activity 的生效主题关掉了 swipe-to-dismiss。 */
+        private int activitiesWithSwipeDisabled;
+        /** 清单里一共算了多少个 Activity。 */
+        private int activityThemeCount;
 
         private final List<String> warnings = new ArrayList<String>();
 
@@ -132,9 +141,39 @@ public final class ApkInspector {
             return Collections.unmodifiableList(warnings);
         }
 
+        /**
+         * 逐个列出清单里 Activity 的"生效主题"，格式 {@code .SecondActivity: style/OtherTheme (parent=...) [自身]}。
+         * 用来确认补丁后每个 Activity 是否都继承到了自己原来的主题。
+         */
+        public List<String> getActivityThemes() {
+            return Collections.unmodifiableList(activityThemes);
+        }
+
+        /** 清单里算了多少个 Activity。 */
+        public int getActivityThemeCount() {
+            return activityThemeCount;
+        }
+
+        /** 有多少个 Activity 的生效主题里 {@code android:windowSwipeToDismiss=false}。 */
+        public int getActivitiesWithSwipeDisabled() {
+            return activitiesWithSwipeDisabled;
+        }
+
+        /**
+         * 启动 Activity 生效的主题是不是本工具的补丁样式。
+         *
+         * <p>按"内容 + 名字"判断：样式名是本工具的补丁样式名（含按 Activity 派生、
+         * 以及为避开同名原样式而加后缀的变体），并且里面确实写了
+         * {@code android:windowSwipeToDismiss=false}。
+         * 这样即使因为撞名改了样式名，也能正确判断补丁是否已经生效。
+         */
+        public boolean isLauncherThemePatchStyle() {
+            return launcherThemeIsPatchStyle;
+        }
+
         /** 启动 Activity 也已指向补丁样式，且样式里关掉了 swipe-to-dismiss。 */
         public boolean isFullyPatched() {
-            return swipeToDismissDisabled && launcherThemeId != 0 && launcherThemeId == patchStyleId;
+            return launcherThemeIsPatchStyle;
         }
 
         public String describe() {
@@ -170,6 +209,12 @@ public final class ApkInspector {
             sb.append("可处理        : ").append(patchable)
               .append(patchableReason == null ? "" : " (" + patchableReason + ")").append('\n');
             sb.append("已完整打补丁  : ").append(isFullyPatched()).append('\n');
+            sb.append("已关闭侧滑    : ").append(activitiesWithSwipeDisabled)
+              .append('/').append(activityThemeCount).append(" 个 Activity\n");
+            sb.append("清单 Activity : ").append(activityThemes.size()).append(" 个\n");
+            for (String line : activityThemes) {
+                sb.append("  - ").append(line).append('\n');
+            }
             for (String w : warnings) {
                 sb.append("  ! ").append(w).append('\n');
             }
@@ -237,6 +282,7 @@ public final class ApkInspector {
             }
 
             readPatchStyle(table, appPackage, info);
+            readActivityThemes(manifest, table, appPackage, info);
 
             if (launcher == null) {
                 info.patchable = false;
@@ -251,6 +297,118 @@ public final class ApkInspector {
             } catch (Throwable ignored) {
                 // 忽略
             }
+        }
+    }
+
+    /**
+     * 记录每个 Activity 的"生效主题"：自身 {@code android:theme} 优先，否则回落到 {@code <application>} 的主题。
+     * 补丁后这里应当全部指向本工具生成的样式，且各自的 parent 仍是该 Activity 原来的主题。
+     */
+    private static void readActivityThemes(AndroidManifestBlock manifest, TableBlock table,
+                                           PackageBlock appPackage, Inspection info) {
+        for (ResXmlElement activity : manifest.listActivities()) {
+            String name = ManifestUtil.attrValue(activity, "name");
+            int ownThemeId = ManifestUtil.themeAttributeId(activity);
+            int effectiveThemeId = ownThemeId != 0 ? ownThemeId : info.applicationThemeId;
+            String source = ownThemeId != 0 ? "自身" : "继承 application";
+            String styleName = ManifestUtil.styleNameOf(table, effectiveThemeId);
+            boolean swipeDisabled = styleDisablesSwipe(table, appPackage, effectiveThemeId);
+
+            info.activityThemeCount++;
+            if (swipeDisabled) {
+                info.activitiesWithSwipeDisabled++;
+            }
+
+            StringBuilder line = new StringBuilder();
+            line.append(name == null ? "(未命名)" : name)
+                .append(": ").append(describeThemeWithParent(table, appPackage, effectiveThemeId))
+                .append(" [").append(source);
+            if (swipeDisabled) {
+                line.append(", swipe=off");
+            }
+            line.append(']');
+            info.activityThemes.add(line.toString());
+
+            boolean isLauncher = name != null && name.equals(info.launcherActivity);
+            if (isLauncher && swipeDisabled && isPatchStyleName(info.patchStyleName, styleName)) {
+                info.launcherThemeIsPatchStyle = true;
+            }
+        }
+    }
+
+    /**
+     * 样式名是不是本工具会用的补丁样式名（相对基名 {@code base}）。
+     *
+     * <p>三种变体：基名 {@code WearNoSwipeUnityTheme}、按 Activity 派生的
+     * {@code WearNoSwipeUnityTheme.SecondActivity}、为避开同名原样式而加后缀的
+     * {@code WearNoSwipeUnityTheme_WearSwipe}（见 {@link ResourcePatcher}）。
+     */
+    private static boolean isPatchStyleName(String base, String styleName) {
+        if (styleName == null) {
+            return false;
+        }
+        String prefix = base == null ? PatchOptions.DEFAULT_STYLE_NAME : base;
+        return styleName.equals(prefix)
+                || styleName.startsWith(prefix + ".")
+                || styleName.startsWith(prefix + "_WearSwipe");
+    }
+
+    /** 某个主题样式里是否写了 {@code android:windowSwipeToDismiss=false}。 */
+    private static boolean styleDisablesSwipe(TableBlock table, PackageBlock appPackage, int themeId) {
+        if (themeId == 0 || appPackage == null) {
+            return false;
+        }
+        String styleName = ManifestUtil.styleNameOf(table, themeId);
+        if (styleName == null) {
+            return false;
+        }
+        try {
+            Entry entry = appPackage.getEntry(ResConfig.getDefault(), "style", styleName);
+            if (entry == null || !entry.isDefined()) {
+                return false;
+            }
+            StyleBag bag = StyleBag.create(entry);
+            if (bag == null) {
+                return false;
+            }
+            StyleBagItem item = bag.get(ResourcePatcher.ATTR_ANDROID_WINDOW_SWIPE_TO_DISMISS);
+            return item != null && item.getValueType() == ValueType.BOOLEAN && item.getValue() == 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** {@code style/AppTheme (parent=style/Theme)}；解析不到 parent 时只给样式名。 */
+    private static String describeThemeWithParent(TableBlock table, PackageBlock appPackage, int themeId) {
+        String description = ManifestUtil.describeResource(table, themeId);
+        if (description == null) {
+            return "(无主题)";
+        }
+        String parent = parentStyleDescription(table, appPackage, themeId);
+        return parent == null ? description : description + " (parent=" + parent + ")";
+    }
+
+    private static String parentStyleDescription(TableBlock table, PackageBlock appPackage, int themeId) {
+        if (appPackage == null) {
+            return null;
+        }
+        String styleName = ManifestUtil.styleNameOf(table, themeId);
+        if (styleName == null) {
+            return null;
+        }
+        try {
+            Entry entry = appPackage.getEntry(ResConfig.getDefault(), "style", styleName);
+            if (entry == null || !entry.isDefined()) {
+                return null;
+            }
+            StyleBag bag = StyleBag.create(entry);
+            if (bag == null || bag.getParentId() == 0) {
+                return null;
+            }
+            String parent = ManifestUtil.describeResource(table, bag.getParentId());
+            return parent == null ? ("0x" + Integer.toHexString(bag.getParentId())) : parent;
+        } catch (Throwable t) {
+            return null;
         }
     }
 
